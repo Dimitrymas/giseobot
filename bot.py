@@ -1,6 +1,4 @@
 from calendar import week
-import re
-from tkinter import Button
 from config import TG_MASTER_KEY, GISEO_LOGIN, GISEO_PASSWORD
 from libgiseo import Manager
 import telebot
@@ -48,9 +46,9 @@ def func(message):
         markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
         printedText = ''
         for wday in bot_data.weeklessons:
-            if wday['date'] == bot_data.selectdate:
+            if dateFromUTC(wday['date']) == bot_data.selectdate:
                 for l in wday['lessons']:
-                    printedText += '**' + l['subjectName'] + '**' 
+                    printedText += '*' + l['subjectName'] + '*' 
                     mark = ' '
                     if 'assignments' in  l:
                         for a in l['assignments']:
@@ -111,7 +109,7 @@ def func(message):
             return
 
         for wday in bot_data.weeklessons:
-            if wday['date'] == bot_data.selectdate:
+            if dateFromUTC(wday['date']) == bot_data.selectdate:
                 for l in wday['lessons']:
                     if l['subjectName'] == message.text:
                         if 'assignments' in  l:
@@ -170,24 +168,67 @@ def get_diary(reg, ddate):
     start_date = startWeek(ddate)
     end_date = endWeek(start_date)
     diary = manager.getDiary (start=dateToSecond(start_date), end=dateToSecond(end_date))
+    #att_file = manager.downloadAttachment(9428202)
     return diary
 
 def drow_buttons_days(message):
-        markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
-        for wday in bot_data.weeklessons:
-            day = wday['date']
-            c = datetime.fromisoformat(day)
-            button = types.KeyboardButton(weekdays[c.weekday()] + ' (' + day + ')' )
-            markup.add(button)
-        
-        #markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
-        buttons=['Предыдущая неделя','Текущая неделя','Следующая неделя']
-        markup.add(*buttons)
+    markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
 
-        start_date = startWeek(bot_data.this_week)
-        end_date = endWeek(start_date)
-        bot.send_message(message.chat.id, text='Неделя с \n' + str(start_date).split(' ')[0] + ' по ' + str(end_date).split(' ')[0], reply_markup=markup)
+    start_date = startWeek(bot_data.this_week)
+    end_date = endWeek(start_date)
+
+    printedText = '📅 Неделя ' + dateFromUTC(str(start_date)) + ' по ' + dateFromUTC(str(end_date)) + ' \n'
+
+    for wday in bot_data.weeklessons:
+        day = dateFromUTC(wday['date'])
+        c = datetime.fromisoformat(day)
+        weekday = weekdays[c.weekday()] + ' (' + dateFromUTC(day) + ')'
+        button = types.KeyboardButton(weekday)
+        markup.add(button)
+
+        printedText += '\n *' + weekday + '* \n'
+        for l in wday['lessons']:
+            printedText += '   _' + l['subjectName'] + '_' 
+            mark = ' '
+            if 'assignments' in  l:
+                for a in l['assignments']:
+                    if 'mark' in a:
+                        current_mark = str(a['mark']['mark'])
+                        if current_mark == 'None':
+                            current_mark = '🔴'
+                        else:
+                            current_mark = mark_emoji(current_mark)
+                        if mark != ' ':
+                            mark += '  /  ' + '*' + current_mark + '* '
+                        else:
+                            mark += ' ' + '*' + current_mark + '* '
+            if mark != ' ':
+                printedText += '   —   ' + mark + ' \n' 
+            else: 
+                printedText += ' \n' 
+
+    buttons=['Предыдущая неделя','Текущая неделя','Следующая неделя']
+    markup.add(*buttons)
+
+    start_date = startWeek(bot_data.this_week)
+    end_date = endWeek(start_date)
+    bot.send_message(message.chat.id, text=printedText, reply_markup=markup, parse_mode='Markdown')
+
+def dateFromUTC(date_str):
+    ds = date_str.split('T')
+    if len(ds) > 1:
+        return ds[0]
+    ds = date_str.split(' ')
+    if len(ds) > 0:
+        return ds[0]
+    return ''
+
+def mark_emoji(mark):
+    m = int(mark)
+    if m > 3:
+        return mark + '👍'
+    else:
+        return mark + '💩'
 
 if __name__ == '__main__':
     bot.polling(none_stop=True, interval=0)
-
