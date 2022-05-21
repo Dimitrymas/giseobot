@@ -6,16 +6,18 @@ from telebot import types
 from datetime import datetime, timedelta, date
 
 weekdays = ['Понедельник', 'Вторник', 'Среда', 'Четверг', 'Пятница', 'Суббота', 'Воскресенье']
+type_of_work = ['', '', '', 'ДЗ', 'КР']
 bot = telebot.TeleBot(TG_MASTER_KEY)
 #bot.send_message(message.chat.id, text='Добро пожаловать', parse_mode='Markdown')
 #global bot_data
 
 class BotData:
-    def __init__(self, weeklessons, this_week : date = date.today(), cday : str = '', cdate: str = ''):
+    def __init__(self, weeklessons, past_mandatory,  this_week : date = date.today(), cday : str = '', cdate: str = ''):
         self.weeklessons = weeklessons
         self.selectday = cday
         self.selectdate = cdate
         self.this_week = this_week
+        self.past_mand = past_mandatory
 
 #bot_data = []
 
@@ -24,9 +26,8 @@ def start(message):
     reg = check_registration(message.from_user.id)
     if reg['registred'] == 'true':
         global bot_data
-
-        diary = get_diary(reg, date.today())
-        bot_data = BotData(diary['weekDays'])
+        diary, past_mandatory = get_diary(reg, date.today())
+        bot_data = BotData(diary['weekDays'], past_mandatory)
         drow_buttons_days(message)
 
 @bot.message_handler(content_types=['text'])
@@ -75,31 +76,40 @@ def func(message):
         if message.text == 'Предыдущая неделя':
             bot_data.this_week = minus_week(bot_data.this_week)
             reg = check_registration(message.from_user.id)
-            diary = get_diary(reg, bot_data.this_week)
+            diary, past_mandatory = get_diary(reg, bot_data.this_week)
             bot_data.weeklessons = diary['weekDays']
+            bot_data.past_mand = past_mandatory
             drow_buttons_days(message)
             return
 
         if message.text == 'Следующая неделя':
             bot_data.this_week = plus_week(bot_data.this_week)
             reg = check_registration(message.from_user.id)
-            diary = get_diary(reg, bot_data.this_week)
+            diary, past_mandatory = get_diary(reg, bot_data.this_week)
             bot_data.weeklessons = diary['weekDays']
+            bot_data.past_mand = past_mandatory
             drow_buttons_days(message)
             return
             
         if message.text == 'Текущая неделя':
             bot_data.this_week = date.today()
             reg = check_registration(message.from_user.id)
-            diary = get_diary(reg, bot_data.this_week)
+            diary, past_mandatory = get_diary(reg, bot_data.this_week)
             bot_data.weeklessons = diary['weekDays']
+            bot_data.past_mand = past_mandatory
             drow_buttons_days(message)
+            return
+        
+        if message.text == 'Пропущенные задания':
+            reg = check_registration(message.from_user.id)
+            print_past_mandatory(message)
             return
 
         if message.text == 'Выбор дня':
             reg = check_registration(message.from_user.id)
-            diary = get_diary(reg, bot_data.this_week)
+            diary, past_mandatory = get_diary(reg, bot_data.this_week)
             bot_data.weeklessons = diary['weekDays']
+            bot_data.past_mand = past_mandatory
             drow_buttons_days(message)
             return
 
@@ -118,7 +128,7 @@ def func(message):
                                 bot.send_message(message.chat.id, text=a['assignmentName'])
                         else:
                             legal_command = True
-                            bot.send_message(message.chat.id, text='💪🕺Не задано🕺💪', parse_mode='MarkdownV2')
+                            bot.send_message(message.chat.id, text='💪🕺Не задано🕺💪', parse_mode='Markdown')
                         bot.send_animation(message.chat.id,r'https://i.pinimg.com/originals/a5/e3/81/a5e381d08ef1b8f964b24672b0b0a9f9.gif')
                 else:   
                     if legal_command == False:
@@ -159,8 +169,8 @@ def minus_week(this_week):
     this_week -= timedelta(days=7)
     return this_week
 
-def plus_week(this_week):
-    this_week += timedelta(days=7)
+def plus_week(this_week, weeks = 1):
+    this_week += timedelta(days = 7 * weeks)
     return this_week
 
 def get_diary(reg, ddate):
@@ -168,8 +178,10 @@ def get_diary(reg, ddate):
     start_date = startWeek(ddate)
     end_date = endWeek(start_date)
     diary = manager.getDiary (start=dateToSecond(start_date), end=dateToSecond(end_date))
+  
+    past_mandatory = manager.getPastMandatory(start=dateToSecond(start_date), end=dateToSecond(end_date))
     #att_file = manager.downloadAttachment(9428202)
-    return diary
+    return diary, past_mandatory
 
 def drow_buttons_days(message):
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
@@ -185,7 +197,6 @@ def drow_buttons_days(message):
         weekday = weekdays[c.weekday()] + ' (' + dateFromUTC(day) + ')'
         button = types.KeyboardButton(weekday)
         markup.add(button)
-
         printedText += '\n *' + weekday + '* \n'
         for l in wday['lessons']:
             printedText += '   _' + l['subjectName'] + '_' 
@@ -206,7 +217,8 @@ def drow_buttons_days(message):
                 printedText += '   —   ' + mark + ' \n' 
             else: 
                 printedText += ' \n' 
-
+    button = types.KeyboardButton('Пропущенные задания')
+    markup.add(button)
     buttons=['Предыдущая неделя','Текущая неделя','Следующая неделя']
     markup.add(*buttons)
 
@@ -222,6 +234,23 @@ def dateFromUTC(date_str):
     if len(ds) > 0:
         return ds[0]
     return ''
+
+
+def print_past_mandatory(message):
+    markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
+
+    start_date = startWeek(bot_data.this_week)
+    end_date = endWeek(start_date)
+
+    printedText = '🚩Пропущенные задания🚩\n'
+
+    for m in bot_data.past_mand:
+        printedText += '*' + m['subjectName'] + ' ' + type_of_work[m['typeId']]+ '* \n' + m['assignmentName'] + '\nДата сдачи: ' + dateFromUTC(str(m['dueDate'])) + ' \n\n'
+
+
+
+    bot.send_message(message.chat.id, text=printedText, reply_markup=markup, parse_mode='Markdown')
+
 
 def mark_emoji(mark):
     m = int(mark)
